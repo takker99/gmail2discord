@@ -8,7 +8,7 @@ Send Gmail messages to your Discord channel using Google Apps Script
 2. Run:
 
 ```bash
-deno run --allow-net --allow-read --allow-env --allow-run https://raw.githubusercontent.com/brunolm/gmail2discord/main/build.ts > main.gs
+deno run --allow-net --allow-read --allow-env --allow-run https://raw.githubusercontent.com/takker99/gmail2discord/main/build.ts > main.gs
 ```
 
 3. Copy the contents of `main.gs` to your Google Apps Script project
