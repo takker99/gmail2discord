@@ -8,17 +8,37 @@ import { makeExecuteWebhookRequest } from "./executeWebhook.ts";
 
 declare const global: Record<string, CallableFunction>;
 
+const defaultFormatter = (
+  message: GoogleAppsScript.Gmail.GmailMessage,
+): ExecuteWebhook => {
+  const posted = message.getDate();
+  const from = message.getFrom();
+  const subject = message.getSubject();
+
+  // return an message trimmed the previous mail quote
+  const plainBody = trimQuote(message);
+  return {
+    content: "",
+    embeds: [{
+      title: subject,
+      author: {
+        name: from,
+      },
+      timestamp: posted.toISOString(),
+      description: plainBody.slice(0, 2048),
+    }],
+  };
+};
+
 global.hook = (
-  formatMessage: (
+  formatMessage?: (
     message: GoogleAppsScript.Gmail.GmailMessage,
   ) => ExecuteWebhook,
 ) => {
+  formatMessage ??= defaultFormatter;
   const checked = getChecked();
-  // Record the start date and time of the hook
-  // Next time, retrieve emails sent or received after this date and time
-  setChecked(new Date());
   // Retrieve emails sent or received after the last checked date and time
-  const threads = GmailApp.search(`after:${format(checked)}`);
+  const threads = GmailApp.search(`after:${formatTime(checked)}`);
 
   if (threads.length == 0) {
     console.log("No messages.");
@@ -35,9 +55,7 @@ global.hook = (
     console.log(`check "${thread.getFirstMessageSubject()}"`);
     return thread.getMessages().flatMap((message) => {
       const posted = message.getDate();
-      const log = `${format(posted)}: "${
-        message.getPlainBody().slice(0, 10)
-      }..."`;
+      const log = format(message);
       // ignore draft messages
       if (message.isDraft()) {
         console.log(`[SKIP][DRAFT] ${log}`);
@@ -55,34 +73,42 @@ global.hook = (
   console.log(`send ${messagesToSend.length} messages`);
   if (messagesToSend.length === 0) return;
 
-  const url = new URL(webhook);
-  UrlFetchApp.fetchAll(
-    messagesToSend
-      .sort((a, b) => a.getDate().getTime() - b.getDate().getTime())
-      .map((message) => makeExecuteWebhookRequest(url, formatMessage(message))),
-  );
+  const url = webhook;
+  const converted = messagesToSend
+    .sort((a, b) => a.getDate().getTime() - b.getDate().getTime())
+    .map((
+      message,
+      i,
+    ) =>
+      [
+        makeExecuteWebhookRequest(url, formatMessage(message)),
+        format(message),
+        message.getDate(),
+        i,
+      ] as const
+    );
+  for (const [req, log, posted, i] of converted) {
+    const res = UrlFetchApp.fetch(req.url, req);
+    if (200 <= res.getResponseCode() && res.getResponseCode() < 300) {
+      console.log(`[${i + 1}/${messagesToSend.length}][SENT] ${log}`);
+      setChecked(posted);
+      Utilities.sleep(1000); // avoid rate limit
+      continue;
+    }
+    console.error(
+      `[${
+        i + 1
+      }/${messagesToSend.length}][ERROR ${res.getResponseCode()}] ${log}\n${res.getContentText()}`,
+    );
+    throw new Error("Failed to send a message");
+  }
+
+  // Record the start date and time of the hook
+  // Next time, retrieve emails sent or received after this date and time
+  setChecked(new Date());
 };
 
-global.defaultFormatter = (
-  message: GoogleAppsScript.Gmail.GmailMessage,
-): ExecuteWebhook => {
-  const posted = message.getDate();
-  const from = message.getFrom();
-  const subject = message.getSubject();
-
-  // return an message trimmed the previous mail quote
-  const plainBody = trimQuote(message);
-  return {
-    embeds: [{
-      title: subject,
-      author: {
-        name: from,
-      },
-      timestamp: posted.toISOString(),
-      description: plainBody.slice(0, 2048),
-    }],
-  };
-};
+global.defaultFormatter = defaultFormatter;
 
 declare const Cheerio: { load: (content: string) => cheerio.CheerioAPI };
 
@@ -124,5 +150,12 @@ const setChecked = (date: GoogleAppsScript.Base.Date) => {
   scriptProperties.setProperty("CHECKED", `${date.getTime()}`);
 };
 
-const format = (date: GoogleAppsScript.Base.Date) =>
-  `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+const formatTime = (date: GoogleAppsScript.Base.Date) =>
+  `${date.getFullYear()}-${zero(date.getMonth() + 1)}-${zero(date.getDate())}`;
+
+const zero = (n: number) => `${n}`.padStart(2, "0");
+
+const format = (message: GoogleAppsScript.Gmail.GmailMessage): string =>
+  `${formatTime(message.getDate())}: "${
+    message.getPlainBody().slice(0, 10)
+  }..."`;
