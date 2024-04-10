@@ -5,6 +5,7 @@ import { build, denoPlugins, stop } from "./deps/esbuild.ts";
 const { outputFiles } = await build({
   entryPoints: [new URL("./main.ts", import.meta.url).href],
   target: "es2017", // convert to ES2017, which is supported by Google Apps Script
+  format: "iife",
   bundle: true,
   minify: true,
   write: false,
@@ -15,5 +16,5 @@ const code = outputFiles[0].text;
 
 const output = generate(code);
 console.log(
-  `const global=this;\n${output.entryPointFunctions}\n(() => {\n${code}\n})();`,
+  `const global=this;\n${output.entryPointFunctions}${code}`,
 );

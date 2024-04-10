@@ -6,30 +6,41 @@
 import { ExecuteWebhook } from "./deps/discord.ts";
 
 export const makeExecuteWebhookRequest = (
-  webhookURL: URL,
+  webhookURL: string,
   options: ExecuteWebhook,
 ): GoogleAppsScript.URL_Fetch.URLFetchRequest => {
   // cf. https://github.com/discordeno/discordeno/blob/18.0.1/util/routes.ts#L370-L379
-  const url = new URL(webhookURL);
-  if (options.wait !== undefined) url.searchParams.set("wait", "true");
+  webhookURL += "?";
+  if (options.wait !== undefined) webhookURL += `wait=${options.wait}&`;
   if (options.threadId) {
-    url.searchParams.set("thread_id", `${options.threadId}`);
+    webhookURL += `thread_id=${options.threadId}&`;
   }
 
-  const payload = options.file
-    // if options includes file, use multipart/form-data
+  const { files, ...withoutFile } = options;
+
+  // cf. https://github.com/discordeno/discordeno/blob/73ec09023e241b26df64ff8770d54f4126211eb0/packages/rest/src/manager.ts#L185
+
+  const payload = files && files.length > 0
+    // Use multipart/form-data if options include files
+    // File upload is currently not working properly. DO NOT USE.
     ? {
       ...Object.fromEntries(
-        options.file.map((file, i) => [`file${i}`, file]),
+        files.map((file, i) => [`files[${i}]`, file]),
       ),
-      payload_json: JSON.stringify(options),
+      payload_json: Utilities.newBlob(
+        JSON.stringify(withoutFile),
+        "application/json",
+      ),
     }
-    : JSON.stringify(options);
+    : JSON.stringify(withoutFile);
 
   return {
     method: "post",
-    contentType: "application/json",
+    contentType: files && files.length > 0
+      ? "multipart/form-data"
+      : "application/json",
     payload,
-    url: `${url}`,
+    url: webhookURL,
+    muteHttpExceptions: true,
   };
 };

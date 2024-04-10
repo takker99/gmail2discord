@@ -27,7 +27,7 @@ export interface ExecuteWebhook {
   /** True if this is a TTS message */
   tts?: boolean;
   /** The contents of the file being sent */
-  file?: Blob[];
+  files?: Blob[];
   /** Embedded `rich` content */
   embeds?: DiscordEmbed[];
   /** Allowed mentions for the message */
